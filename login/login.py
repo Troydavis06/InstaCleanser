@@ -4,7 +4,7 @@ import instaloader
 L = instaloader.Instaloader()
 
 def login(username, password):
-    print("can  be reached")
+    print("can be reached")
     try:
         L.login(username, password)
     except instaloader.TwoFactorAuthRequiredException:
