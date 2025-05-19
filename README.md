@@ -2,7 +2,7 @@
 
 InstaCleanser is a desktop application that allows users to navigate their Instagram following and followers. The key feature of this tool is the ability to identify and unfollow users who do not follow back, helping to maintain a balanced and organized follower list.  
 
-## Notice - InstaCleanser is not currently being pushed to git, I have had issues with my laptop and am currently working to recover and push files correctly now.
+## Notice - InstaCleanser is currently being remade. This notice will be gone when the application is fully complete.
 
 ## Features  
 - View a list of users you follow and compare it against your followers  
