@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>InstaCleanser</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="brand">
+    <div class="brand-row">
+      <span class="brand-mark">InstaCleanser</span>
+      <button type="button" id="open-side-panel" class="btn-link" title="Stays open while you switch tabs">
+        Side panel
+      </button>
+    </div>
+    <p class="brand-hint">Popups close when you click away. Use <strong>Side panel</strong> to keep this open, or reopen the popup — your last run is restored.</p>
+  </header>
+
+  <section id="setup" class="card">
+    <p class="hint">
+      Keep <strong>instagram.com</strong> open and logged in. Analysis runs in the page context using your session.
+    </p>
+    <label for="user">Username to analyze</label>
+    <input id="user" type="text" placeholder="Yours or a friend (no @)" autocomplete="username" spellcheck="false" />
+    <button id="run" type="button" class="btn-primary">Run analysis</button>
+    <p id="run-status" class="run-status" role="status" aria-live="polite" hidden></p>
+  </section>
+
+  <section id="error-panel" class="card card-error hidden" aria-live="polite">
+    <h2 class="panel-title">Something went wrong</h2>
+    <pre id="error-text" class="mono"></pre>
+  </section>
+
+  <section id="results" class="hidden" aria-live="polite">
+    <div class="tabs" role="tablist" aria-label="Results">
+      <button type="button" class="tab active" role="tab" aria-selected="true" data-tab="followers" id="tab-followers">
+        Followers
+        <span class="tab-count" id="count-tab-followers">0</span>
+      </button>
+      <button type="button" class="tab" role="tab" aria-selected="false" data-tab="following" id="tab-following">
+        Following
+        <span class="tab-count" id="count-tab-following">0</span>
+      </button>
+      <button type="button" class="tab" role="tab" aria-selected="false" data-tab="nonfb" id="tab-nonfb">
+        No follow-back
+        <span class="tab-count tab-count-warn" id="count-tab-nonfb">0</span>
+      </button>
+    </div>
+
+    <div class="tab-panels card card-flush">
+      <div class="tab-panel active" role="tabpanel" id="panel-followers" aria-labelledby="tab-followers">
+        <div class="stat-block">
+          <span class="stat-label">Followers</span>
+          <span class="stat-value" id="stat-followers">0</span>
+        </div>
+        <details class="list-disclosure">
+          <summary>View all accounts <span class="chevron" aria-hidden="true"></span></summary>
+          <div class="list-scroll">
+            <ul id="list-followers" class="account-list"></ul>
+          </div>
+        </details>
+      </div>
+
+      <div class="tab-panel" role="tabpanel" id="panel-following" aria-labelledby="tab-following" hidden>
+        <div class="stat-block">
+          <span class="stat-label">Following</span>
+          <span class="stat-value" id="stat-following">0</span>
+        </div>
+        <details class="list-disclosure">
+          <summary>View all accounts <span class="chevron" aria-hidden="true"></span></summary>
+          <div class="list-scroll">
+            <ul id="list-following" class="account-list"></ul>
+          </div>
+        </details>
+      </div>
+
+      <div class="tab-panel" role="tabpanel" id="panel-nonfb" aria-labelledby="tab-nonfb" hidden>
+        <p id="foreign-profile-note" class="alert-banner hidden">
+          Viewing someone else’s profile — lists are theirs. Unfollow is hidden so you don’t change <em>your</em> following by mistake.
+        </p>
+        <div class="stat-block">
+          <span class="stat-label" id="nonfb-stat-label">Accounts they follow · don’t follow them back</span>
+          <span class="stat-value stat-value-warn" id="stat-nonfb">0</span>
+        </div>
+        <p class="nonfb-actions" id="nonfb-actions-wrap">
+          <button type="button" id="unfollow-all" class="btn-danger-outline">Unfollow all</button>
+        </p>
+        <details class="list-disclosure" open>
+          <summary>All accounts <span class="chevron" aria-hidden="true"></span></summary>
+          <div class="list-scroll list-scroll-tall">
+            <ul id="list-nonfb" class="account-list account-list-actions"></ul>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <p id="status" class="status-bar" role="status" aria-live="polite"></p>
+
+    <footer class="meta-footer card card-meta">
+      <h3 class="meta-title">Session / run details</h3>
+      <dl class="meta-grid" id="meta-details"></dl>
+    </footer>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>

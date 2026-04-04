@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "InstaCleanser",
+  "version": "0.1.0",
+  "description": "See who does not follow you back and manage follows using your Instagram session in the browser.",
+  "action": {
+    "default_title": "InstaCleanser",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "permissions": ["scripting", "activeTab", "storage", "sidePanel"],
+  "host_permissions": ["https://www.instagram.com/*"]
+}
