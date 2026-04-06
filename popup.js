@@ -430,33 +430,115 @@ async function injectUnfollow(tabId, userId) {
     world: "MAIN",
     args: [userId],
     func: async (targetUserId) => {
+      const ROLLOUT_CACHE_KEY = "__instacleanser_rollout_v1";
+      const ROLLOUT_TTL_MS = 4 * 60 * 1000;
+      const IG_APP_ID = "936619743392459";
+
       function getCookie(name) {
         const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
         return m ? decodeURIComponent(m[1]) : "";
       }
-      const csrf = getCookie("csrftoken");
-      const url = `https://www.instagram.com/web/friendships/${targetUserId}/unfollow/`;
-      const res = await fetch(url, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "x-csrftoken": csrf,
-          "x-requested-with": "XMLHttpRequest",
-          "x-instagram-ajax": "1",
-        },
-        body: new URLSearchParams(),
-      });
-      let json = null;
-      try {
-        json = await res.json();
-      } catch {
-        /* ignore */
+
+      function rolloutFromHtml(html) {
+        const m = html.match(/"rollout_hash":"([A-Za-z0-9]+)"/);
+        return m ? m[1] : null;
       }
-      return {
-        ok: res.ok && json?.status === "ok",
-        status: res.status,
-        json,
-      };
+
+      function readCachedRollout() {
+        try {
+          const c = window[ROLLOUT_CACHE_KEY];
+          if (c && typeof c.h === "string" && Date.now() - c.t < ROLLOUT_TTL_MS) {
+            return c.h;
+          }
+        } catch {
+          /* ignore */
+        }
+        return null;
+      }
+
+      function writeCachedRollout(h) {
+        try {
+          window[ROLLOUT_CACHE_KEY] = { h, t: Date.now() };
+        } catch {
+          /* ignore */
+        }
+      }
+
+      function clearCachedRollout() {
+        try {
+          delete window[ROLLOUT_CACHE_KEY];
+        } catch {
+          /* ignore */
+        }
+      }
+
+      /**
+       * Instagram expects x-instagram-ajax to match the current rollout_hash from page HTML,
+       * not the literal "1". POST /web/friendships/.../unfollow/ often starts returning 400
+       * after a few calls if the header stays wrong.
+       */
+      async function resolveRolloutHash({ forceHomeFetch } = {}) {
+        if (!forceHomeFetch) {
+          const cached = readCachedRollout();
+          if (cached) return cached;
+          const fromDoc = rolloutFromHtml(document.documentElement.innerHTML);
+          if (fromDoc) {
+            writeCachedRollout(fromDoc);
+            return fromDoc;
+          }
+        }
+        clearCachedRollout();
+        const res = await fetch("https://www.instagram.com/", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        const text = await res.text();
+        const h = rolloutFromHtml(text) || "1";
+        writeCachedRollout(h);
+        return h;
+      }
+
+      async function postUnfollow(rollout) {
+        const csrf = getCookie("csrftoken");
+        const id = String(targetUserId).trim();
+        if (!csrf || !id) {
+          return { ok: false, status: 0, json: null };
+        }
+        const url = `https://www.instagram.com/web/friendships/${encodeURIComponent(id)}/unfollow/`;
+        const res = await fetch(url, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "x-csrftoken": csrf,
+            "x-requested-with": "XMLHttpRequest",
+            "x-instagram-ajax": rollout,
+            "x-ig-app-id": IG_APP_ID,
+            Accept: "application/json",
+          },
+          body: new URLSearchParams(),
+        });
+        let json = null;
+        try {
+          json = await res.json();
+        } catch {
+          /* ignore */
+        }
+        return {
+          ok: res.ok && json?.status === "ok",
+          status: res.status,
+          json,
+        };
+      }
+
+      let rollout = await resolveRolloutHash({ forceHomeFetch: false });
+      let out = await postUnfollow(rollout);
+      if (out.ok) return out;
+      if (out.status === 400 || out.status === 429 || out.status === 403) {
+        rollout = await resolveRolloutHash({ forceHomeFetch: true });
+        await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800));
+        out = await postUnfollow(rollout);
+      }
+      return out;
     },
   });
   return result;
@@ -595,7 +677,7 @@ els.unfollowAll.addEventListener("click", async () => {
     } catch {
       /* continue */
     }
-    await delay(2000 + Math.random() * 2500);
+    await delay(3500 + Math.random() * 4000);
   }
 
   if (lastAnalysisData?.following) {
