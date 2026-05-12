@@ -418,6 +418,50 @@ button.btn:disabled {
   font-weight: 600;
 }
 
+/* Privacy page */
+a.logo {
+  text-decoration: none;
+}
+
+a.logo:hover {
+  opacity: 0.95;
+}
+
+.policy-title {
+  margin: 0 0 0.5rem;
+  font-size: clamp(1.35rem, 3vw, 1.75rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.policy-lead {
+  margin-bottom: 2rem;
+}
+
+.policy-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.policy-h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.policy-p-tight {
+  margin-top: 0;
+}
+
+.policy-p-end {
+  margin-bottom: 0;
+}
+
+.policy-list-tight {
+  margin-bottom: 0;
+}
+
 @media (min-width: 40rem) {
   .hero {
     padding-top: 3.25rem;

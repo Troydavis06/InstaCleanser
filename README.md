@@ -31,6 +31,8 @@ Static marketing page for the extension lives in [`site/`](site/). It uses the s
 
 **GitHub Pages (project site):** In the repo on GitHub, go to **Settings → Pages**, set **Source** to **Deploy from a branch**, branch **main**, folder **`/` (root)**. After the build, the site is available at `https://<your-username>.github.io/InstaCleanser/site/` (screenshots load from `/InstaCleanser/assets/…`). If you use a custom domain, update `link rel="canonical"` and the `og:*` / `twitter:*` absolute URLs in [`site/index.html`](site/index.html).
 
+**Privacy policy (Chrome Web Store):** After Pages is live, use [`site/privacy.html`](site/privacy.html) as the policy URL (e.g. `https://<your-username>.github.io/InstaCleanser/site/privacy.html`). You can add `homepage_url` in [`manifest.json`](manifest.json) in a later release once the site URL is final.
+
 ## Install (developer / unpacked)
 
 1. Clone or download this repository.
