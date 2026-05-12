@@ -25,6 +25,12 @@ If you analyze **someone else’s** username, those unfollow actions are **disab
 - Google Chrome or Microsoft Edge (Chromium), **114+** (for the optional side panel).
 - Stay logged in on [instagram.com](https://www.instagram.com) in the tab you use for analysis.
 
+## Website (landing page)
+
+Static marketing page for the extension lives in [`site/`](site/). It uses the same dark palette and gradient accents as the popup. Open [`site/index.html`](site/index.html) locally, or serve the repo root so asset paths resolve.
+
+**GitHub Pages (project site):** In the repo on GitHub, go to **Settings → Pages**, set **Source** to **Deploy from a branch**, branch **main**, folder **`/` (root)**. After the build, the site is available at `https://<your-username>.github.io/InstaCleanser/site/` (screenshots load from `/InstaCleanser/assets/…`). If you use a custom domain, update `link rel="canonical"` and the `og:*` / `twitter:*` absolute URLs in [`site/index.html`](site/index.html).
+
 ## Install (developer / unpacked)
 
 1. Clone or download this repository.
