@@ -242,7 +242,9 @@ code {
 /* ---------- hero ---------- */
 
 .hero {
-  padding-block: 4.5rem 1rem;
+  /* The section rule below sits directly under the CTA, so the bottom needs
+     real room -- 1rem put the line almost against the button. */
+  padding-block: 4.5rem 4rem;
 }
 
 .hero h1 {
