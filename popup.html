@@ -3,13 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>InstaCleanser</title>
-  <script>
-    // Applied before first paint so the popup never opens in the wrong theme.
-    try {
-      var t = localStorage.getItem("instacleanser_theme");
-      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
-    } catch (e) {}
-  </script>
+  <script src="theme-init.js"></script>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>

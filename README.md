@@ -85,6 +85,7 @@ Follower and following lists are paged until exhausted, capped at 500 pages. The
 | --- | --- |
 | `manifest.json` | Extension manifest, MV3. |
 | `popup.html`, `popup.css`, `popup.js` | The popup and side panel. One document serves both. |
+| `theme-init.js` | Applies the saved theme before first paint. Separate file because MV3 extension pages block inline scripts. |
 | `background.js` | Service worker. |
 | `icons/` | Toolbar and store icons, plus the script that generates them. |
 | `site/` | The landing page and privacy policy. |
