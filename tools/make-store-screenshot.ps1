@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path $PSScriptRoot -Parent
-if (-not $Source) { $Source = Join-Path $repoRoot "assets\icMain.png" }
+if (-not $Source) { $Source = Join-Path $repoRoot "assets\popup-main-dark.png" }
 if (-not $Out) { $Out = Join-Path $repoRoot "assets\store-marquee-1280x800.png" }
 
 Add-Type -AssemblyName System.Drawing
