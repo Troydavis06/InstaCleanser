@@ -3,30 +3,44 @@
 <head>
   <meta charset="UTF-8" />
   <title>InstaCleanser</title>
+  <script>
+    // Applied before first paint so the popup never opens in the wrong theme.
+    try {
+      var t = localStorage.getItem("instacleanser_theme");
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    } catch (e) {}
+  </script>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
   <header class="brand">
-    <div class="brand-row">
-      <span class="brand-mark">InstaCleanser</span>
-      <button type="button" id="open-side-panel" class="btn-link" title="Stays open while you switch tabs">
+    <span class="brand-mark">InstaCleanser</span>
+    <div class="brand-actions">
+      <button type="button" id="theme-toggle" class="btn-icon" data-choice="system" title="Theme: system" aria-label="Theme: system">
+        <svg class="i-system" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><rect x="1.7" y="2.7" width="12.6" height="8.6" rx="1.5"/><path d="M5.5 13.8h5"/></svg>
+        <svg class="i-light" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.1"/><path d="M8 1.2v1.5M8 13.3v1.5M14.8 8h-1.5M2.7 8H1.2M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1M12.8 12.8l-1.1-1.1M4.3 4.3L3.2 3.2"/></svg>
+        <svg class="i-dark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><path d="M13.2 9.6A5.7 5.7 0 0 1 6.4 2.8a5.7 5.7 0 1 0 6.8 6.8z"/></svg>
+      </button>
+      <button type="button" id="open-side-panel" class="btn-ghost" title="Keeps this open while you switch tabs">
         Side panel
       </button>
     </div>
-    <p class="brand-hint">Popups close when you click away. Use <strong>Side panel</strong> to keep this open, or reopen the popup — your last run is restored.</p>
   </header>
 
-  <section id="setup" class="card">
-    <p class="hint">
-      Keep <strong>instagram.com</strong> open and logged in. Analysis runs in the page context using your session.
-    </p>
-    <label for="user">Username to analyze</label>
-    <input id="user" type="text" placeholder="Yours or a friend (no @)" autocomplete="username" spellcheck="false" />
+  <section id="setup" class="setup">
+    <p class="note">Works on an open, logged-in instagram.com tab.</p>
+    <div class="field-group">
+      <label for="user">Username</label>
+      <div class="field">
+        <span class="at" aria-hidden="true">@</span>
+        <input id="user" type="text" placeholder="yourhandle" autocomplete="username" spellcheck="false" />
+      </div>
+    </div>
     <button id="run" type="button" class="btn-primary">Run analysis</button>
-    <p id="run-status" class="run-status" role="status" aria-live="polite" hidden></p>
+    <p id="run-status" class="status-bar status-inline" role="status" aria-live="polite" hidden></p>
   </section>
 
-  <section id="error-panel" class="card card-error hidden" aria-live="polite">
+  <section id="error-panel" class="error-panel hidden" aria-live="polite">
     <h2 class="panel-title">Something went wrong</h2>
     <pre id="error-text" class="mono"></pre>
   </section>
@@ -34,72 +48,49 @@
   <section id="results" class="hidden" aria-live="polite">
     <div class="tabs" role="tablist" aria-label="Results">
       <button type="button" class="tab active" role="tab" aria-selected="true" data-tab="followers" id="tab-followers">
-        Followers
+        <span class="tab-label">Followers</span>
         <span class="tab-count" id="count-tab-followers">0</span>
       </button>
       <button type="button" class="tab" role="tab" aria-selected="false" data-tab="following" id="tab-following">
-        Following
+        <span class="tab-label">Following</span>
         <span class="tab-count" id="count-tab-following">0</span>
       </button>
       <button type="button" class="tab" role="tab" aria-selected="false" data-tab="nonfb" id="tab-nonfb">
-        No follow-back
-        <span class="tab-count tab-count-warn" id="count-tab-nonfb">0</span>
+        <span class="tab-label">No follow-back</span>
+        <span class="tab-count" id="count-tab-nonfb">0</span>
       </button>
     </div>
 
-    <div class="tab-panels card card-flush">
+    <div class="tab-panels">
       <div class="tab-panel active" role="tabpanel" id="panel-followers" aria-labelledby="tab-followers">
-        <div class="stat-block">
-          <span class="stat-label">Followers</span>
-          <span class="stat-value" id="stat-followers">0</span>
+        <div class="list-scroll">
+          <ul id="list-followers" class="account-list"></ul>
         </div>
-        <details class="list-disclosure">
-          <summary>View all accounts <span class="chevron" aria-hidden="true"></span></summary>
-          <div class="list-scroll">
-            <ul id="list-followers" class="account-list"></ul>
-          </div>
-        </details>
       </div>
 
       <div class="tab-panel" role="tabpanel" id="panel-following" aria-labelledby="tab-following" hidden>
-        <div class="stat-block">
-          <span class="stat-label">Following</span>
-          <span class="stat-value" id="stat-following">0</span>
+        <div class="list-scroll">
+          <ul id="list-following" class="account-list"></ul>
         </div>
-        <details class="list-disclosure">
-          <summary>View all accounts <span class="chevron" aria-hidden="true"></span></summary>
-          <div class="list-scroll">
-            <ul id="list-following" class="account-list"></ul>
-          </div>
-        </details>
       </div>
 
       <div class="tab-panel" role="tabpanel" id="panel-nonfb" aria-labelledby="tab-nonfb" hidden>
-        <p id="foreign-profile-note" class="alert-banner hidden">
-          Viewing someone else’s profile — lists are theirs. Unfollow is hidden so you don’t change <em>your</em> following by mistake.
+        <p id="foreign-profile-note" class="readonly-note hidden">
+          This is someone else's profile, so the lists are theirs and unfollow is off.
         </p>
-        <div class="stat-block">
-          <span class="stat-label" id="nonfb-stat-label">Accounts they follow · don’t follow them back</span>
-          <span class="stat-value stat-value-warn" id="stat-nonfb">0</span>
+        <div class="panel-head">
+          <p class="panel-caption" id="nonfb-stat-label">You follow them, they don't follow you back</p>
+          <p class="nonfb-actions" id="nonfb-actions-wrap">
+            <button type="button" id="unfollow-all" class="btn-danger">Unfollow all</button>
+          </p>
         </div>
-        <p class="nonfb-actions" id="nonfb-actions-wrap">
-          <button type="button" id="unfollow-all" class="btn-danger-outline">Unfollow all</button>
-        </p>
-        <details class="list-disclosure" open>
-          <summary>All accounts <span class="chevron" aria-hidden="true"></span></summary>
-          <div class="list-scroll list-scroll-tall">
-            <ul id="list-nonfb" class="account-list account-list-actions"></ul>
-          </div>
-        </details>
+        <div class="list-scroll list-scroll-tall">
+          <ul id="list-nonfb" class="account-list account-list-actions"></ul>
+        </div>
       </div>
     </div>
 
     <p id="status" class="status-bar" role="status" aria-live="polite"></p>
-
-    <footer class="meta-footer card card-meta">
-      <h3 class="meta-title">Session / run details</h3>
-      <dl class="meta-grid" id="meta-details"></dl>
-    </footer>
   </section>
 
   <script src="popup.js"></script>
