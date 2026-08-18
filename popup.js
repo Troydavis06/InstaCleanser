@@ -12,7 +12,6 @@ const els = {
   errorText: $("#error-text"),
   status: $("#status"),
   runStatus: $("#run-status"),
-  metaDetails: $("#meta-details"),
   listFollowers: $("#list-followers"),
   listFollowing: $("#list-following"),
   listNonfb: $("#list-nonfb"),
@@ -28,6 +27,25 @@ let nonfbAccounts = [];
 /** @type {Record<string, unknown> | null} */
 let lastAnalysisData = null;
 let analysisIsSelf = false;
+
+function setCount(name, n) {
+  const el = $(`#count-tab-${name}`);
+  el.dataset.value = String(n);
+  el.textContent = Number(n).toLocaleString();
+}
+
+function getCount(name) {
+  return Number($(`#count-tab-${name}`).dataset.value) || 0;
+}
+
+function lastRunLabel() {
+  const iso = lastAnalysisData?.analyzedAtISO;
+  if (!iso) return "";
+  return `Last run ${new Date(iso).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  })}`;
+}
 
 function escapeHtml(s) {
   const d = document.createElement("div");
@@ -125,36 +143,15 @@ function renderAccountList(ul, accounts, { links = true, actions = false } = {})
   ul.appendChild(frag);
 }
 
-function renderMeta(data) {
-  const analyzed =
-    data.analyzedAtDisplay ||
-    (data.analyzedAtISO
-      ? new Date(data.analyzedAtISO).toLocaleString()
-      : new Date().toLocaleString());
-  const rows = [
-    ["Account", `@${data.username}`],
-    ["User ID", data.userId],
-    ["Logged in as", data.viewerUsername ? `@${data.viewerUsername}` : "—"],
-    ["Unfollow allowed", data.isSelf ? "Yes (your profile)" : "No (not your profile)"],
-    ["Follower pages fetched", String(data.followersPages)],
-    ["Following pages fetched", String(data.followingPages)],
-    ["List capped (500 pages max)", data.truncated ? "Yes — counts may be incomplete" : "No"],
-    ["Analyzed at", analyzed],
-  ];
-  els.metaDetails.innerHTML = rows
-    .map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`)
-    .join("");
-}
-
 function applyNonfbMode(isSelf) {
   if (isSelf) {
     els.foreignNote.classList.add("hidden");
     els.nonfbActionsWrap.classList.remove("hidden");
-    els.nonfbStatLabel.textContent = "You follow · they don’t follow you back";
+    els.nonfbStatLabel.textContent = "You follow them, they don’t follow you back";
   } else {
     els.foreignNote.classList.remove("hidden");
     els.nonfbActionsWrap.classList.add("hidden");
-    els.nonfbStatLabel.textContent = "They follow · don’t follow them back";
+    els.nonfbStatLabel.textContent = "They follow these accounts, which don’t follow back";
   }
 }
 
@@ -181,12 +178,9 @@ function showResults(data) {
   analysisIsSelf = data.isSelf === true;
   lastAnalysisData = buildPersistPayload(data);
 
-  $("#count-tab-followers").textContent = String(data.followerCount);
-  $("#count-tab-following").textContent = String(data.followingCount);
-  $("#count-tab-nonfb").textContent = String(data.notFollowingBackCount);
-  $("#stat-followers").textContent = String(data.followerCount);
-  $("#stat-following").textContent = String(data.followingCount);
-  $("#stat-nonfb").textContent = String(data.notFollowingBackCount);
+  setCount("followers", data.followerCount);
+  setCount("following", data.followingCount);
+  setCount("nonfb", data.notFollowingBackCount);
 
   renderAccountList(els.listFollowers, data.followers, { links: true });
   renderAccountList(els.listFollowing, data.following, { links: true });
@@ -199,7 +193,6 @@ function showResults(data) {
   });
   els.unfollowAll.disabled = !analysisIsSelf || nonfbAccounts.length === 0;
 
-  renderMeta(lastAnalysisData);
   els.results.classList.remove("hidden");
   const saved = data.ui?.activeTab;
   const initialTab = ["followers", "following", "nonfb"].includes(saved) ? saved : "followers";
@@ -212,8 +205,8 @@ async function syncStateToStorage() {
   if (!lastAnalysisData) return;
   lastAnalysisData.notFollowingBack = [...nonfbAccounts];
   lastAnalysisData.notFollowingBackCount = nonfbAccounts.length;
-  lastAnalysisData.followingCount = Number($("#stat-following").textContent) || 0;
-  lastAnalysisData.followerCount = Number($("#stat-followers").textContent) || 0;
+  lastAnalysisData.followingCount = getCount("following");
+  lastAnalysisData.followerCount = getCount("followers");
   await saveAnalysisToStorage();
 }
 
@@ -589,7 +582,7 @@ els.run.addEventListener("click", async () => {
       return;
     }
     showResults(result);
-    setStatus("Done.");
+    setStatus(lastRunLabel());
   } catch (e) {
     showError(String(e));
     setStatus("", false);
@@ -627,11 +620,8 @@ els.listNonfb.addEventListener("click", async (e) => {
       if (lastAnalysisData?.following) {
         lastAnalysisData.following = lastAnalysisData.following.filter((a) => a.id !== userId);
       }
-      $("#stat-nonfb").textContent = String(nonfbAccounts.length);
-      $("#count-tab-nonfb").textContent = String(nonfbAccounts.length);
-      const fc = Number($("#stat-following").textContent) || 0;
-      $("#stat-following").textContent = String(Math.max(0, fc - 1));
-      $("#count-tab-following").textContent = String(Math.max(0, fc - 1));
+      setCount("nonfb", nonfbAccounts.length);
+      setCount("following", Math.max(0, getCount("following") - 1));
       btn.closest("li")?.classList.add("muted");
       setStatus(`Unfollowed @${uname}.`);
       void syncStateToStorage();
@@ -684,12 +674,8 @@ els.unfollowAll.addEventListener("click", async () => {
     lastAnalysisData.following = lastAnalysisData.following.filter((x) => !unfollowedIds.has(x.id));
   }
 
-  const followingNow = Number($("#stat-following").textContent) || 0;
-  const newFollowing = Math.max(0, followingNow - okCount);
-  $("#stat-following").textContent = String(newFollowing);
-  $("#count-tab-following").textContent = String(newFollowing);
-  $("#stat-nonfb").textContent = String(nonfbAccounts.length);
-  $("#count-tab-nonfb").textContent = String(nonfbAccounts.length);
+  setCount("following", Math.max(0, getCount("following") - okCount));
+  setCount("nonfb", nonfbAccounts.length);
 
   renderAccountList(els.listNonfb, nonfbAccounts, {
     links: true,
@@ -709,7 +695,7 @@ async function restoreCachedAnalysis() {
     els.user.value = raw.username;
     lastInstagramTabId = (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
     showResults(raw);
-    setStatus("Restored last analysis.");
+    setStatus(lastRunLabel());
   } catch {
     /* ignore */
   }
@@ -724,6 +710,51 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("pagehide", () => {
   void persistUiTabBeforeHide();
 });
+
+/* Theme: system -> light -> dark. The stored choice is also read by an inline
+   script in popup.html so the first paint is already correct; localStorage is
+   used rather than chrome.storage because only it can be read synchronously. */
+const THEME_KEY = "instacleanser_theme";
+const THEME_CYCLE = ["system", "light", "dark"];
+
+function readThemeChoice() {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === "light" || v === "dark" ? v : "system";
+  } catch {
+    return "system";
+  }
+}
+
+function applyThemeChoice(choice) {
+  if (choice === "system") {
+    delete document.documentElement.dataset.theme;
+  } else {
+    document.documentElement.dataset.theme = choice;
+  }
+
+  const btn = $("#theme-toggle");
+  if (btn) {
+    btn.dataset.choice = choice;
+    btn.title = `Theme: ${choice}`;
+    btn.setAttribute("aria-label", `Theme: ${choice}`);
+  }
+
+  try {
+    if (choice === "system") localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, choice);
+  } catch {
+    /* ignore */
+  }
+}
+
+const themeToggle = $("#theme-toggle");
+if (themeToggle) {
+  themeToggle.addEventListener("click", () => {
+    const i = THEME_CYCLE.indexOf(readThemeChoice());
+    applyThemeChoice(THEME_CYCLE[(i + 1) % THEME_CYCLE.length]);
+  });
+}
 
 const openSidePanelBtn = $("#open-side-panel");
 if (openSidePanelBtn) {
@@ -744,6 +775,7 @@ if (openSidePanelBtn) {
 }
 
 function boot() {
+  applyThemeChoice(readThemeChoice());
   void restoreCachedAnalysis();
 }
 if (document.readyState === "loading") {
