@@ -216,6 +216,9 @@ async function runInjectedAnalysis(tabId, username) {
     world: "MAIN",
     args: [username],
     func: async (usernameArg) => {
+      const IG_APP_ID = "936619743392459";
+      const ASBD_ID = "198387";
+      const WWW_CLAIM_KEY = "www-claim-v2";
       const FOLLOWERS_HASH = "37479f2b8209594dde7facb0d904896a";
       const FOLLOWING_HASH = "58712303d941c6855d4e888c5f0cd22f";
 
@@ -224,76 +227,167 @@ async function runInjectedAnalysis(tabId, username) {
         return m ? decodeURIComponent(m[1]) : "";
       }
 
-      /**
-       * Logged-in viewer id + username. IDs are the reliable way to detect "your own" profile;
-       * username-only checks fail when the API omits or formats username differently.
-       */
-      async function fetchLoggedInViewer() {
-        const csrf = getCookie("csrftoken");
-        const res = await fetch("https://www.instagram.com/api/v1/accounts/current_user/", {
-          credentials: "include",
-          headers: {
-            "x-csrftoken": csrf,
-            "x-requested-with": "XMLHttpRequest",
-            "x-instagram-ajax": "1",
-            "x-ig-app-id": "936619743392459",
-          },
-        });
-        const j = await res.json().catch(() => null);
-        const u = j?.user;
-        const id =
-          u?.pk != null
-            ? String(u.pk)
-            : u?.id != null
-              ? String(u.id)
-              : null;
-        const username = u?.username ? String(u.username).trim().toLowerCase() : null;
-        return { id, username };
+      function jitter(base, spread) {
+        return new Promise((r) => setTimeout(r, base + Math.random() * spread));
       }
 
-      async function graphqlQuery(queryHash, variables) {
-        const params = new URLSearchParams({
-          query_hash: queryHash,
-          variables: JSON.stringify(variables),
-        });
-        const url = `https://www.instagram.com/graphql/query/?${params}`;
-        const csrf = getCookie("csrftoken");
-        const res = await fetch(url, {
-          method: "GET",
-          credentials: "include",
-          headers: {
-            "x-csrftoken": csrf,
-            "x-requested-with": "XMLHttpRequest",
-            "x-instagram-ajax": "1",
-            "x-ig-app-id": "936619743392459",
-          },
-        });
-        const text = await res.text();
-        let json = null;
+      let cachedRollout = null;
+      function rolloutHash() {
+        if (cachedRollout === null) {
+          const m = document.documentElement.innerHTML.match(/"rollout_hash":"([A-Za-z0-9]+)"/);
+          cachedRollout = m ? m[1] : "";
+        }
+        return cachedRollout;
+      }
+
+      /**
+       * instagram.com carries a claim token between its own XHRs; requests that never
+       * echo one back read as scripted. The page keeps it in sessionStorage, and every
+       * response can hand back a newer one.
+       */
+      function readWwwClaim() {
         try {
-          json = JSON.parse(text);
+          return sessionStorage.getItem(WWW_CLAIM_KEY) || "0";
+        } catch {
+          return "0";
+        }
+      }
+
+      function storeWwwClaim(res) {
+        const c = res.headers.get("x-ig-set-www-claim");
+        if (!c) return;
+        try {
+          sessionStorage.setItem(WWW_CLAIM_KEY, c);
         } catch {
           /* ignore */
         }
-        return { ok: res.ok, status: res.status, json, textHead: text.slice(0, 400) };
+      }
+
+      /**
+       * x-instagram-ajax must be the page's current rollout_hash. The literal "1" this
+       * used to send is what gets read requests answered with 400 feedback_required,
+       * the same way it broke the unfollow POST. When the page exposes no hash the
+       * header is dropped rather than faked.
+       */
+      function igHeaders() {
+        const h = {
+          "x-csrftoken": getCookie("csrftoken"),
+          "x-requested-with": "XMLHttpRequest",
+          "x-ig-app-id": IG_APP_ID,
+          "x-asbd-id": ASBD_ID,
+          "x-ig-www-claim": readWwwClaim(),
+        };
+        const r = rolloutHash();
+        if (r) h["x-instagram-ajax"] = r;
+        return h;
+      }
+
+      async function igFetch(url, init = {}) {
+        const res = await fetch(url, {
+          credentials: "include",
+          ...init,
+          headers: { ...igHeaders(), ...(init.headers || {}) },
+        });
+        storeWwwClaim(res);
+        return res;
+      }
+
+      const targetUsername = usernameArg.replace(/^@/, "").trim().toLowerCase();
+
+      async function fetchLoggedInViewer() {
+        const res = await igFetch("https://www.instagram.com/api/v1/accounts/current_user/");
+        const j = await res.json().catch(() => null);
+        const u = j?.user;
+        const id = u?.pk != null ? String(u.pk) : u?.id != null ? String(u.id) : null;
+        const un = u?.username ? String(u.username).trim().toLowerCase() : null;
+        return { id, username: un, status: res.status };
+      }
+
+      /**
+       * Fallback for when current_user/ is itself rate limited. The session cookie
+       * gives the viewer's id for free, so that id is used to find the matching
+       * username inside whatever payload the page already shipped with.
+       */
+      function viewerUsernameFromPage(viewerId) {
+        const html = document.documentElement.innerHTML;
+        const patterns = [
+          /"viewer"\s*:\s*\{[^{}]*"username"\s*:\s*"([^"]+)"/,
+          /"viewer_username"\s*:\s*"([^"]+)"/,
+        ];
+        const id = (viewerId || "").replace(/[^0-9]/g, "");
+        if (id) {
+          patterns.push(
+            new RegExp(`"(?:id|pk)"\\s*:\\s*"?${id}"?[^{}]{0,240}?"username"\\s*:\\s*"([^"]+)"`),
+            new RegExp(`"username"\\s*:\\s*"([^"]+)"[^{}]{0,240}?"(?:id|pk)"\\s*:\\s*"?${id}"?`),
+          );
+        }
+        for (const p of patterns) {
+          const m = html.match(p);
+          if (m) return m[1].toLowerCase();
+        }
+        return null;
+      }
+
+      /** Instagram's anti-automation refusal, as opposed to a genuine "no such user". */
+      function isRateLimited(r) {
+        return Boolean(
+          r && (r.status === 400 || r.status === 429) && r.raw?.message === "feedback_required",
+        );
       }
 
       async function resolveUserId(handle) {
-        const u = handle.replace(/^@/, "").trim().toLowerCase();
-        const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`;
-        const csrf = getCookie("csrftoken");
-        const res = await fetch(url, {
-          credentials: "include",
-          headers: {
-            "x-csrftoken": csrf,
-            "x-requested-with": "XMLHttpRequest",
-            "x-instagram-ajax": "1",
-            "x-ig-app-id": "936619743392459",
-          },
-        });
+        const url = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(handle)}`;
+        const res = await igFetch(url);
         const json = await res.json().catch(() => null);
         const id = json?.data?.user?.id ?? json?.data?.user?.pk;
         return { ok: res.ok, status: res.status, id: id != null ? String(id) : null, raw: json };
+      }
+
+      /** The endpoints instagram.com's own follower/following modals call. */
+      async function paginateFriendships(kind, uid) {
+        const accounts = [];
+        let maxId = null;
+        let pages = 0;
+        const maxPages = 500;
+
+        while (pages < maxPages) {
+          const params = new URLSearchParams({ count: "50" });
+          if (maxId) params.set("max_id", maxId);
+          const res = await igFetch(
+            `https://www.instagram.com/api/v1/friendships/${encodeURIComponent(uid)}/${kind}/?${params}`,
+          );
+          const json = await res.json().catch(() => null);
+
+          if (!res.ok || !json || json.status === "fail") {
+            return {
+              error: json?.message || `${kind} request failed (${res.status})`,
+              status: res.status,
+              partial: accounts,
+              raw: json,
+            };
+          }
+          if (!Array.isArray(json.users)) {
+            return {
+              error: `Unexpected ${kind} response shape (no users array)`,
+              status: res.status,
+              partial: accounts,
+              raw: json,
+            };
+          }
+
+          for (const u of json.users) {
+            const un = u?.username;
+            const id = u?.pk ?? u?.id;
+            if (un && id != null) accounts.push({ id: String(id), username: String(un).toLowerCase() });
+          }
+
+          pages += 1;
+          maxId = json.next_max_id ? String(json.next_max_id) : null;
+          if (!maxId) break;
+          await jitter(900, 900);
+        }
+
+        return { accounts, pages, truncated: pages >= maxPages && Boolean(maxId) };
       }
 
       function edgeToAccounts(edge) {
@@ -307,7 +401,7 @@ async function runInjectedAnalysis(tabId, username) {
         return out;
       }
 
-      async function paginateEdge(queryHash, userId, edgeKey) {
+      async function paginateEdge(queryHash, uid, edgeKey) {
         const accounts = [];
         let after = null;
         let hasNext = true;
@@ -315,82 +409,118 @@ async function runInjectedAnalysis(tabId, username) {
         const maxPages = 500;
 
         while (hasNext && pages < maxPages) {
-          const variables = { id: userId, first: 50 };
+          const variables = { id: uid, first: 50 };
           if (after) variables.after = after;
+          const params = new URLSearchParams({
+            query_hash: queryHash,
+            variables: JSON.stringify(variables),
+          });
+          const res = await igFetch(`https://www.instagram.com/graphql/query/?${params}`);
+          const json = await res.json().catch(() => null);
 
-          const { ok, status, json } = await graphqlQuery(queryHash, variables);
-          if (!ok || !json) {
+          if (!res.ok || !json || json.status === "fail") {
             return {
-              error: `GraphQL request failed (${status})`,
+              error: json?.message || `GraphQL request failed (${res.status})`,
+              status: res.status,
               partial: accounts,
-              jsonHead: json,
+              raw: json,
             };
           }
 
-          if (json.status === "fail") {
-            return {
-              error: json.message || "GraphQL status fail",
-              partial: accounts,
-              json,
-            };
-          }
-
-          const user = json.data?.user;
-          const edge = user?.[edgeKey];
+          const edge = json.data?.user?.[edgeKey];
           if (!edge) {
             return {
               error: `Unexpected response shape (missing ${edgeKey})`,
+              status: res.status,
               partial: accounts,
-              json,
+              raw: json,
             };
           }
 
           accounts.push(...edgeToAccounts(edge));
-
-          const pi = edge.page_info;
-          hasNext = Boolean(pi?.has_next_page);
-          after = pi?.end_cursor || null;
+          hasNext = Boolean(edge.page_info?.has_next_page);
+          after = edge.page_info?.end_cursor || null;
           pages += 1;
-          await new Promise((r) => setTimeout(r, 350));
+          if (hasNext) await jitter(900, 900);
         }
 
         return { accounts, pages, truncated: pages >= maxPages };
       }
 
-      const targetUsername = usernameArg.replace(/^@/, "").trim().toLowerCase();
-
-      const uid = await resolveUserId(usernameArg);
-      if (!uid.id) {
-        return {
-          ok: false,
-          step: "resolve_user",
-          error: "Could not read user id (private / wrong username / not logged in?)",
-          detail: uid,
-        };
+      async function collect(kind, uid, queryHash, edgeKey) {
+        const primary = await paginateFriendships(kind, uid);
+        if (!primary.error) return primary;
+        const fallback = await paginateEdge(queryHash, uid, edgeKey);
+        if (!fallback.error) return fallback;
+        return { ...primary, fallbackError: fallback.error, fallbackStatus: fallback.status };
       }
 
       const cookieViewerId = (getCookie("ds_user_id") || "").trim();
       const viewer = await fetchLoggedInViewer();
+      const viewerName = viewer.username || viewerUsernameFromPage(cookieViewerId);
 
-      const idMatches =
-        (cookieViewerId && String(cookieViewerId) === String(uid.id)) ||
-        (viewer.id && String(viewer.id) === String(uid.id));
-      const nameMatches = Boolean(viewer.username && viewer.username === targetUsername);
+      /**
+       * Your own id is already in the session cookie, so analysing your own account
+       * never has to touch web_profile_info - the lookup most likely to come back
+       * rate limited.
+       */
+      let userId = null;
+      let isSelf = false;
+      let assumedSelf = false;
+      let lookup = null;
 
-      const isSelf = Boolean(idMatches || nameMatches);
-
-      const viewerUsername = viewer.username || (isSelf ? targetUsername : null);
-
-      const [followersResult, followingResult] = await Promise.all([
-        paginateEdge(FOLLOWERS_HASH, uid.id, "edge_followed_by"),
-        paginateEdge(FOLLOWING_HASH, uid.id, "edge_follow"),
-      ]);
-
-      if (followersResult.error) {
-        return { ok: false, step: "followers", userId: uid.id, ...followersResult };
+      if (viewerName && viewerName === targetUsername) {
+        userId = viewer.id || cookieViewerId || null;
+        isSelf = Boolean(userId);
       }
+
+      if (!userId) {
+        lookup = await resolveUserId(targetUsername);
+        userId = lookup.id;
+        isSelf = Boolean(
+          userId &&
+            ((cookieViewerId && cookieViewerId === userId) ||
+              (viewer.id && viewer.id === userId) ||
+              (viewerName && viewerName === targetUsername)),
+        );
+      }
+
+      /**
+       * Last resort: the lookup was refused rather than answered, so the typed handle
+       * can neither be confirmed nor denied. The cookie id is the one thing Instagram
+       * cannot withhold, so it is used and the guess is reported back.
+       */
+      if (!userId && cookieViewerId && isRateLimited(lookup)) {
+        userId = cookieViewerId;
+        isSelf = true;
+        assumedSelf = true;
+      }
+
+      if (!userId) {
+        return {
+          ok: false,
+          step: "resolve_user",
+          error: "Could not read user id (private / wrong username / not logged in?)",
+          detail: {
+            lookup,
+            viewerStatus: viewer.status,
+            viewerName: viewerName || null,
+            cookieViewerId: cookieViewerId || null,
+            rolloutHash: rolloutHash() || null,
+          },
+        };
+      }
+
+      const followersResult = await collect("followers", userId, FOLLOWERS_HASH, "edge_followed_by");
+      if (followersResult.error) {
+        return { ok: false, step: "followers", userId, ...followersResult };
+      }
+
+      await jitter(1200, 800);
+
+      const followingResult = await collect("following", userId, FOLLOWING_HASH, "edge_follow");
       if (followingResult.error) {
-        return { ok: false, step: "following", userId: uid.id, ...followingResult };
+        return { ok: false, step: "following", userId, ...followingResult };
       }
 
       const followerNames = new Set(followersResult.accounts.map((a) => a.username));
@@ -399,9 +529,10 @@ async function runInjectedAnalysis(tabId, username) {
       return {
         ok: true,
         username: targetUsername,
-        userId: uid.id,
-        viewerUsername,
+        userId,
+        viewerUsername: viewerName || (isSelf ? targetUsername : null),
         isSelf,
+        assumedSelf,
         followerCount: followersResult.accounts.length,
         followingCount: followingResult.accounts.length,
         notFollowingBackCount: notFollowingBack.length,
@@ -506,6 +637,7 @@ async function injectUnfollow(tabId, userId) {
             "x-requested-with": "XMLHttpRequest",
             "x-instagram-ajax": rollout,
             "x-ig-app-id": IG_APP_ID,
+            "x-asbd-id": "198387",
             Accept: "application/json",
           },
           body: new URLSearchParams(),
@@ -574,15 +706,18 @@ els.run.addEventListener("click", async () => {
   try {
     const result = await runInjectedAnalysis(tab.id, username);
     if (!result?.ok) {
-      const msg =
-        result?.error ||
-        (result?.detail ? JSON.stringify(result.detail, null, 2) : JSON.stringify(result, null, 2));
+      const detail = result?.detail ?? result;
+      const msg = `${result?.error || "Request failed"}\n\n${JSON.stringify(detail, null, 2)}`;
       showError(msg);
       setStatus("", false);
       return;
     }
     showResults(result);
-    setStatus(lastRunLabel());
+    setStatus(
+      result.assumedSelf
+        ? "Instagram refused the profile lookup, so your logged-in account was used."
+        : lastRunLabel(),
+    );
   } catch (e) {
     showError(String(e));
     setStatus("", false);
